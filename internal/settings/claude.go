@@ -128,9 +128,11 @@ func EnableOpenCodeMode(proxyURL string) error {
 	}
 
 	s.Env["ANTHROPIC_BASE_URL"] = proxyURL
-	s.Env["ANTHROPIC_AUTH_TOKEN"] = "unused"
+	s.Env["ANTHROPIC_API_KEY"] = "occb-proxy"
 	s.Env["DISABLE_NON_ESSENTIAL_MODEL_CALLS"] = "1"
 	s.Env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+	// Remove ANTHROPIC_AUTH_TOKEN to avoid auth conflict with API key mode
+	delete(s.Env, "ANTHROPIC_AUTH_TOKEN")
 
 	return s.Save()
 }
@@ -148,10 +150,10 @@ func EnableOpenCodeModeWithAPIKey(proxyURL string) error {
 	}
 
 	s.Env["ANTHROPIC_BASE_URL"] = proxyURL
-	s.Env["ANTHROPIC_AUTH_TOKEN"] = "unused"
 	s.Env["ANTHROPIC_API_KEY"] = "occb-proxy"
 	s.Env["DISABLE_NON_ESSENTIAL_MODEL_CALLS"] = "1"
 	s.Env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+	delete(s.Env, "ANTHROPIC_AUTH_TOKEN")
 
 	return s.Save()
 }
@@ -204,9 +206,11 @@ func IsClaudeAuthenticated() bool {
 		`"accessToken"`,
 		`"refreshToken"`,
 		`"account"`,
+		`"oauthAccount"`,
 		`"user"`,
 		`"email"`,
 		`"organization"`,
+		`"billingType"`,
 	})
 }
 
