@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/nilparra-dev/opencode-go-cc/internal/app"
 	"github.com/nilparra-dev/opencode-go-cc/internal/config"
 	"github.com/nilparra-dev/opencode-go-cc/internal/settings"
 )
@@ -49,16 +48,11 @@ override the default Anthropic endpoint.`,
 				return fmt.Errorf("failed to load config: %w", err)
 			}
 
-			// Start proxy in background
+			// Start proxy in background as separate process
 			fmt.Println("Starting proxy server...")
-			application, err := app.NewApp(cfg, proxyPIDPath())
-			if err != nil {
-				return fmt.Errorf("failed to create app: %w", err)
+			if err := forkIntoBackground(0); err != nil {
+				return fmt.Errorf("failed to start proxy: %w", err)
 			}
-
-			go func() {
-				_ = application.Start()
-			}()
 
 			// Wait for proxy to be ready
 			proxyURL := fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port)

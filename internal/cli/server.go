@@ -21,11 +21,6 @@ func NewServeCmd() *cobra.Command {
 		Use:   "serve",
 		Short: "Start the proxy server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if daemonize {
-				// Re-execute in background
-				return forkIntoBackground(port)
-			}
-
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
@@ -38,6 +33,11 @@ func NewServeCmd() *cobra.Command {
 			application, err := app.NewApp(cfg, proxyPIDPath())
 			if err != nil {
 				return fmt.Errorf("failed to create app: %w", err)
+			}
+
+			if daemonize {
+				// Background mode: start server without console output
+				return application.Start()
 			}
 
 			fmt.Printf("Starting proxy on %s:%d\n", cfg.Host, cfg.Port)
