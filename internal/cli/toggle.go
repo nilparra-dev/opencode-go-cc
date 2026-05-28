@@ -23,45 +23,24 @@ func proxyPIDPath() string {
 
 // NewOnCmd creates the on command.
 func NewOnCmd() *cobra.Command {
-	var forceAPIKey bool
-
 	cmd := &cobra.Command{
 		Use:   "on",
 		Short: "Activate OpenCode mode",
 		Long: `Starts the proxy server and configures Claude Code to use OpenCode Go models.
 
-If you are logged into Claude.ai (Claude Code shows "API Usage Billing"), Claude Code
-may ignore the proxy and continue using Anthropic models. In that case, run:
+This command:
+1. Ensures Claude Code onboarding is marked complete (required for proxy mode)
+2. Starts the proxy server in the background
+3. Configures Claude Code settings to route through the proxy
 
-  claude auth logout
-
-And then run 'occb on' again. Alternatively, use --force-api-key to override
-the OAuth session (you will be prompted to approve the API key on first run).`,
+You can use this even if you are logged into Claude.ai. The proxy will
+override the default Anthropic endpoint.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Check if already running
 			if pid, err := readPID(); err == nil && isProcessRunning(pid) {
 				fmt.Printf("Proxy is already running (PID %d)\n", pid)
 				fmt.Println("Run 'occb off' first if you want to restart.")
 				return nil
-			}
-
-			// Check if user is logged into Claude.ai BEFORE starting proxy
-			if settings.IsClaudeAuthenticated() && !forceAPIKey {
-				fmt.Println()
-				fmt.Println("⚠️  WARNING: You are logged into Claude.ai")
-				fmt.Println("   Claude Code may ignore the proxy and continue using Anthropic models.")
-				fmt.Println()
-				fmt.Println("   To use OpenCode Go models, you have two options:")
-				fmt.Println()
-				fmt.Println("   Option 1 (recommended):")
-				fmt.Println("     claude auth logout")
-				fmt.Println("     occb on")
-				fmt.Println()
-				fmt.Println("   Option 2 (force API key mode):")
-				fmt.Println("     occb on --force-api-key")
-				fmt.Println("     (Claude Code will prompt you to approve the key on first run)")
-				fmt.Println()
-				return fmt.Errorf("Claude.ai session detected")
 			}
 
 			// Load config
@@ -87,15 +66,9 @@ the OAuth session (you will be prompted to approve the API key on first run).`,
 				return fmt.Errorf("proxy failed to start: %w", err)
 			}
 
-			// Update Claude Code settings
-			if forceAPIKey {
-				if err := settings.EnableOpenCodeModeWithAPIKey(proxyURL); err != nil {
-					return fmt.Errorf("failed to update Claude Code settings: %w", err)
-				}
-			} else {
-				if err := settings.EnableOpenCodeMode(proxyURL); err != nil {
-					return fmt.Errorf("failed to update Claude Code settings: %w", err)
-				}
+			// Update Claude Code settings (this also ensures onboarding is complete)
+			if err := settings.EnableOpenCodeMode(proxyURL); err != nil {
+				return fmt.Errorf("failed to update Claude Code settings: %w", err)
 			}
 
 			fmt.Println()
@@ -107,8 +80,6 @@ the OAuth session (you will be prompted to approve the API key on first run).`,
 			return nil
 		},
 	}
-
-	cmd.Flags().BoolVar(&forceAPIKey, "force-api-key", false, "Force API key mode to override Claude.ai OAuth session")
 
 	return cmd
 }

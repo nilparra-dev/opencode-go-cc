@@ -113,7 +113,15 @@ func (s *Settings) Save() error {
 }
 
 // EnableOpenCodeMode updates settings.json to route Claude Code through the proxy.
+// It also ensures ~/.claude.json has hasCompletedOnboarding set to true,
+// which is required for Claude Code to respect ANTHROPIC_BASE_URL.
 func EnableOpenCodeMode(proxyURL string) error {
+	// First, ensure onboarding is marked complete in ~/.claude.json
+	// This prevents Claude Code from ignoring ANTHROPIC_BASE_URL
+	if err := EnsureOnboardingComplete(); err != nil {
+		return fmt.Errorf("failed to update Claude Code onboarding state: %w", err)
+	}
+
 	s, err := Load()
 	if err != nil {
 		return err
@@ -121,11 +129,8 @@ func EnableOpenCodeMode(proxyURL string) error {
 
 	s.Env["ANTHROPIC_BASE_URL"] = proxyURL
 	s.Env["ANTHROPIC_AUTH_TOKEN"] = "unused"
-	// Note: We intentionally do NOT set ANTHROPIC_API_KEY here.
-	// If we set it, Claude Code shows an auth conflict when the user
-	// is also logged into Claude.ai via OAuth.
-	// The correct flow is: either be logged out of Claude.ai, or use
-	// the --force-api-key flag if you want to override the OAuth session.
+	s.Env["DISABLE_NON_ESSENTIAL_MODEL_CALLS"] = "1"
+	s.Env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
 
 	return s.Save()
 }
@@ -133,6 +138,10 @@ func EnableOpenCodeMode(proxyURL string) error {
 // EnableOpenCodeModeWithAPIKey forces API key mode (for users who want to
 // override their Claude.ai OAuth session).
 func EnableOpenCodeModeWithAPIKey(proxyURL string) error {
+	if err := EnsureOnboardingComplete(); err != nil {
+		return fmt.Errorf("failed to update Claude Code onboarding state: %w", err)
+	}
+
 	s, err := Load()
 	if err != nil {
 		return err
@@ -141,6 +150,8 @@ func EnableOpenCodeModeWithAPIKey(proxyURL string) error {
 	s.Env["ANTHROPIC_BASE_URL"] = proxyURL
 	s.Env["ANTHROPIC_AUTH_TOKEN"] = "unused"
 	s.Env["ANTHROPIC_API_KEY"] = "occb-proxy"
+	s.Env["DISABLE_NON_ESSENTIAL_MODEL_CALLS"] = "1"
+	s.Env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
 
 	return s.Save()
 }
@@ -155,6 +166,8 @@ func DisableOpenCodeMode() error {
 	delete(s.Env, "ANTHROPIC_BASE_URL")
 	delete(s.Env, "ANTHROPIC_AUTH_TOKEN")
 	delete(s.Env, "ANTHROPIC_API_KEY")
+	delete(s.Env, "DISABLE_NON_ESSENTIAL_MODEL_CALLS")
+	delete(s.Env, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
 
 	return s.Save()
 }
@@ -219,4 +232,44 @@ func containsHelper(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// EnsureOnboardingComplete ensures ~/.claude.json has hasCompletedOnboarding set to true.
+// Claude Code has an onboarding gate that runs before reading env vars. If onboarding
+// is not marked complete, it ignores ANTHROPIC_BASE_URL and forces OAuth login.
+func EnsureOnboardingComplete() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	claudeJSON := filepath.Join(home, ".claude.json")
+
+	var data map[string]interface{}
+
+	if raw, err := os.ReadFile(claudeJSON); err == nil {
+		// File exists, parse it
+		if err := json.Unmarshal(raw, &data); err != nil {
+			// If it's not valid JSON, overwrite with minimal config
+			data = make(map[string]interface{})
+		}
+	} else {
+		// File doesn't exist, start fresh
+		data = make(map[string]interface{})
+	}
+
+	// Ensure hasCompletedOnboarding is set
+	data["hasCompletedOnboarding"] = true
+
+	output, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal .claude.json: %w", err)
+	}
+	output = append(output, '\n')
+
+	if err := os.WriteFile(claudeJSON, output, 0644); err != nil {
+		return fmt.Errorf("failed to write .claude.json: %w", err)
+	}
+
+	return nil
 }

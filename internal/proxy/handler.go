@@ -152,10 +152,15 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	models := []map[string]interface{}{
-		{"id": "claude-3-opus-20240229", "display_name": "Claude 3 Opus"},
-		{"id": "claude-3-sonnet-20240229", "display_name": "Claude 3 Sonnet"},
-		{"id": "claude-3-haiku-20240307", "display_name": "Claude 3 Haiku"},
+	cfg := s.cfg.Get()
+
+	// Return configured OpenCode Go models
+	models := make([]map[string]interface{}, 0, len(cfg.Models))
+	for _, model := range cfg.Models {
+		models = append(models, map[string]interface{}{
+			"id":           model.ModelID,
+			"display_name": model.ModelID,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
