@@ -3,8 +3,14 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/nilparra-dev/opencode-go-cc/internal/app"
+	"github.com/nilparra-dev/opencode-go-cc/internal/config"
 )
 
 // NewServeCmd creates the serve command.
@@ -16,9 +22,28 @@ func NewServeCmd() *cobra.Command {
 		Use:   "serve",
 		Short: "Start the proxy server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement server start
-			fmt.Printf("occb serve — not yet implemented (port=%d, daemonize=%v)\n", port, daemonize)
-			return nil
+			if daemonize {
+				// Re-execute in background
+				return forkIntoBackground(port)
+			}
+
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("failed to load config: %w", err)
+			}
+
+			if port != 0 {
+				cfg.Port = port
+			}
+
+			application, err := app.NewApp(cfg, "")
+			if err != nil {
+				return fmt.Errorf("failed to create app: %w", err)
+			}
+
+			fmt.Printf("Starting proxy on %s:%d\n", cfg.Host, cfg.Port)
+			fmt.Println("Press Ctrl+C to stop")
+			return application.Start()
 		},
 	}
 
@@ -35,8 +60,23 @@ func NewStopCmd() *cobra.Command {
 		Use:   "stop",
 		Short: "Stop the proxy server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement proxy stop
-			fmt.Println("occb stop — not yet implemented")
+			pid, err := readPID()
+			if err != nil {
+				return fmt.Errorf("proxy is not running")
+			}
+
+			process, err := os.FindProcess(pid)
+			if err != nil {
+				_ = os.Remove(proxyPIDPath())
+				return fmt.Errorf("proxy is not running")
+			}
+
+			if err := process.Signal(os.Interrupt); err != nil {
+				_ = process.Kill()
+			}
+
+			_ = os.Remove(proxyPIDPath())
+			fmt.Println("Proxy stopped")
 			return nil
 		},
 	}
@@ -49,9 +89,42 @@ func NewRunCmd() *cobra.Command {
 		Short: "Run Claude Code with a temporary proxy",
 		Long:  `Starts the proxy, launches Claude Code with the given arguments, and stops the proxy when Claude exits.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement temporary proxy + claude execution
-			fmt.Println("occb run — not yet implemented")
-			return nil
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("failed to load config: %w", err)
+			}
+
+			// Start proxy
+			application, err := app.NewApp(cfg, "")
+			if err != nil {
+				return fmt.Errorf("failed to create app: %w", err)
+			}
+
+			go func() {
+				_ = application.Start()
+			}()
+
+			proxyURL := fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port)
+			if err := waitForProxy(proxyURL, 5*time.Second); err != nil {
+				return fmt.Errorf("proxy failed to start: %w", err)
+			}
+
+			// Run claude with proxy env vars
+			claudeCmd := exec.Command("claude", args...)
+			claudeCmd.Stdin = os.Stdin
+			claudeCmd.Stdout = os.Stdout
+			claudeCmd.Stderr = os.Stderr
+			claudeCmd.Env = append(os.Environ(),
+				fmt.Sprintf("ANTHROPIC_BASE_URL=%s", proxyURL),
+				"ANTHROPIC_AUTH_TOKEN=unused",
+			)
+
+			err = claudeCmd.Run()
+
+			// Stop proxy
+			_ = application.Stop()
+
+			return err
 		},
 	}
 }
@@ -62,8 +135,18 @@ func NewValidateCmd() *cobra.Command {
 		Use:   "validate",
 		Short: "Validate configuration",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement config validation
-			fmt.Println("occb validate — not yet implemented")
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("invalid config: %w", err)
+			}
+
+			fmt.Println("Configuration is valid!")
+			fmt.Printf("  Host:    %s\n", cfg.Host)
+			fmt.Printf("  Port:    %d\n", cfg.Port)
+			fmt.Printf("  API Key: %s...\n", maskString(cfg.APIKey, 8))
+			fmt.Printf("  Base URL: %s\n", cfg.OpenCodeGo.BaseURL)
+			fmt.Printf("  Models:  %d\n", len(cfg.Models))
+			fmt.Printf("  Fallbacks: %d\n", len(cfg.Fallbacks))
 			return nil
 		},
 	}
@@ -78,7 +161,7 @@ func NewModelsCmd() *cobra.Command {
 			fmt.Println("Available OpenCode Go models:")
 			fmt.Println()
 			fmt.Println("  Model ID           Endpoint Type")
-			fmt.Println("  ─────────────────────────────────────────")
+			fmt.Println("  -----------------------------------------")
 			fmt.Println("  glm-5.1            OpenAI-compatible")
 			fmt.Println("  glm-5              OpenAI-compatible")
 			fmt.Println("  kimi-k2.6          OpenAI-compatible")
@@ -97,4 +180,31 @@ func NewModelsCmd() *cobra.Command {
 			fmt.Println("Use these model IDs in your config.yaml file.")
 		},
 	}
+}
+
+// forkIntoBackground re-executes the current process in the background.
+func forkIntoBackground(port int) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command(exe, "serve", "--_daemonize")
+	if port != 0 {
+		cmd.Args = append(cmd.Args, "--port", fmt.Sprintf("%d", port))
+	}
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow: true,
+	}
+
+	return cmd.Start()
+}
+
+// maskString masks all but the first `visible` characters of a string.
+func maskString(s string, visible int) string {
+	if len(s) <= visible {
+		return s
+	}
+	return s[:visible] + "..."
 }
