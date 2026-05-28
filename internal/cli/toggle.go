@@ -61,7 +61,7 @@ override the default Anthropic endpoint.`,
 			}
 
 			// Update Claude Code settings (this also ensures onboarding is complete)
-			if err := settings.EnableOpenCodeMode(proxyURL); err != nil {
+			if err := settings.EnableOpenCodeMode(proxyURL, cfg); err != nil {
 				return fmt.Errorf("failed to update Claude Code settings: %w", err)
 			}
 

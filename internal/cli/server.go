@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/nilparra-dev/opencode-go-cc/internal/app"
 	"github.com/nilparra-dev/opencode-go-cc/internal/config"
+	"github.com/nilparra-dev/opencode-go-cc/internal/settings"
 )
 
 // NewServeCmd creates the serve command.
@@ -113,10 +114,14 @@ func NewRunCmd() *cobra.Command {
 			claudeCmd.Stdin = os.Stdin
 			claudeCmd.Stdout = os.Stdout
 			claudeCmd.Stderr = os.Stderr
-			claudeCmd.Env = append(os.Environ(),
+			claudeEnv := append(os.Environ(),
 				fmt.Sprintf("ANTHROPIC_BASE_URL=%s", proxyURL),
 				"ANTHROPIC_AUTH_TOKEN=unused",
 			)
+			for key, value := range settings.OpenCodeModelEnv(cfg) {
+				claudeEnv = append(claudeEnv, fmt.Sprintf("%s=%s", key, value))
+			}
+			claudeCmd.Env = claudeEnv
 
 			err = claudeCmd.Run()
 

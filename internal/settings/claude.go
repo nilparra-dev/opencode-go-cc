@@ -7,6 +7,21 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/nilparra-dev/opencode-go-cc/internal/config"
+)
+
+const (
+	envAnthropicBaseURL      = "ANTHROPIC_BASE_URL"
+	envAnthropicAuthToken    = "ANTHROPIC_AUTH_TOKEN"
+	envAnthropicAPIKey       = "ANTHROPIC_API_KEY"
+	envAnthropicModel        = "ANTHROPIC_MODEL"
+	envDefaultSonnetModel    = "ANTHROPIC_DEFAULT_SONNET_MODEL"
+	envDefaultOpusModel      = "ANTHROPIC_DEFAULT_OPUS_MODEL"
+	envDefaultHaikuModel     = "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+	envSmallFastModel        = "ANTHROPIC_SMALL_FAST_MODEL"
+	envDisableModelCalls     = "DISABLE_NON_ESSENTIAL_MODEL_CALLS"
+	envDisableNonessential   = "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
 )
 
 // ClaudeDir returns the Claude Code settings directory.
@@ -113,9 +128,9 @@ func (s *Settings) Save() error {
 }
 
 // EnableOpenCodeMode updates settings.json to route Claude Code through the proxy.
-// It also ensures ~/.claude.json has hasCompletedOnboarding set to true,
-// which is required for Claude Code to respect ANTHROPIC_BASE_URL.
-func EnableOpenCodeMode(proxyURL string) error {
+// It also pins Claude's default model tiers to OpenCode models so /model exposes
+// the configured OpenCode options instead of Anthropic defaults.
+func EnableOpenCodeMode(proxyURL string, cfg *config.Config) error {
 	// First, ensure onboarding is marked complete in ~/.claude.json
 	// This prevents Claude Code from ignoring ANTHROPIC_BASE_URL
 	if err := EnsureOnboardingComplete(); err != nil {
@@ -127,19 +142,23 @@ func EnableOpenCodeMode(proxyURL string) error {
 		return err
 	}
 
-	s.Env["ANTHROPIC_BASE_URL"] = proxyURL
-	s.Env["ANTHROPIC_API_KEY"] = "occb-proxy"
-	s.Env["DISABLE_NON_ESSENTIAL_MODEL_CALLS"] = "1"
-	s.Env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
-	// Remove ANTHROPIC_AUTH_TOKEN to avoid auth conflict with API key mode
-	delete(s.Env, "ANTHROPIC_AUTH_TOKEN")
+	clearOpenCodeModeEnv(s.Env)
+
+	s.Env[envAnthropicBaseURL] = proxyURL
+	// Claude Code uses the auth-token path to bootstrap custom model options from /v1/models.
+	// The proxy does not validate bearer tokens, so any sentinel value works here.
+	s.Env[envAnthropicAuthToken] = "unused"
+
+	for key, value := range OpenCodeModelEnv(cfg) {
+		s.Env[key] = value
+	}
 
 	return s.Save()
 }
 
 // EnableOpenCodeModeWithAPIKey forces API key mode (for users who want to
 // override their Claude.ai OAuth session).
-func EnableOpenCodeModeWithAPIKey(proxyURL string) error {
+func EnableOpenCodeModeWithAPIKey(proxyURL string, cfg *config.Config) error {
 	if err := EnsureOnboardingComplete(); err != nil {
 		return fmt.Errorf("failed to update Claude Code onboarding state: %w", err)
 	}
@@ -149,11 +168,16 @@ func EnableOpenCodeModeWithAPIKey(proxyURL string) error {
 		return err
 	}
 
-	s.Env["ANTHROPIC_BASE_URL"] = proxyURL
-	s.Env["ANTHROPIC_API_KEY"] = "occb-proxy"
-	s.Env["DISABLE_NON_ESSENTIAL_MODEL_CALLS"] = "1"
-	s.Env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
-	delete(s.Env, "ANTHROPIC_AUTH_TOKEN")
+	clearOpenCodeModeEnv(s.Env)
+
+	s.Env[envAnthropicBaseURL] = proxyURL
+	s.Env[envAnthropicAPIKey] = "occb-proxy"
+	s.Env[envDisableModelCalls] = "1"
+	s.Env[envDisableNonessential] = "1"
+
+	for key, value := range OpenCodeModelEnv(cfg) {
+		s.Env[key] = value
+	}
 
 	return s.Save()
 }
@@ -165,13 +189,185 @@ func DisableOpenCodeMode() error {
 		return err
 	}
 
-	delete(s.Env, "ANTHROPIC_BASE_URL")
-	delete(s.Env, "ANTHROPIC_AUTH_TOKEN")
-	delete(s.Env, "ANTHROPIC_API_KEY")
-	delete(s.Env, "DISABLE_NON_ESSENTIAL_MODEL_CALLS")
-	delete(s.Env, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
+	clearOpenCodeModeEnv(s.Env)
 
 	return s.Save()
+}
+
+// OpenCodeModelEnv maps Claude's built-in model tiers to a curated OpenCode picker.
+// Claude only exposes a handful of custom slots in /model, so we keep the main
+// default route and use the remaining slots to surface a broader set of models.
+func OpenCodeModelEnv(cfg *config.Config) map[string]string {
+	modelEnv := map[string]string{}
+	used := make(map[string]struct{})
+
+	slots := []struct {
+		envKey     string
+		candidates [][]string
+	}{
+		{
+			envKey: envAnthropicModel,
+			candidates: [][]string{
+				scenarioModelCandidates(cfg, "default"),
+				fallbackModelCandidates(cfg, "default"),
+				{"kimi-k2.6", "deepseek-v4-pro", "qwen3.7-max", "glm-5.1"},
+			},
+		},
+		{
+			envKey: envDefaultSonnetModel,
+			candidates: [][]string{
+				{"deepseek-v4-pro", "mimo-v2.5-pro", "glm-5", "kimi-k2.6", "qwen3.7-max"},
+				scenarioModelCandidates(cfg, "think", "default", "complex"),
+				fallbackModelCandidates(cfg, "think", "default", "complex"),
+			},
+		},
+		{
+			envKey: envDefaultOpusModel,
+			candidates: [][]string{
+				{"qwen3.7-max", "glm-5.1", "deepseek-v4-pro", "minimax-m2.7", "mimo-v2.5-pro"},
+				scenarioModelCandidates(cfg, "complex", "think", "long_context", "default"),
+				fallbackModelCandidates(cfg, "complex", "think", "long_context", "default"),
+			},
+		},
+		{
+			envKey: envDefaultHaikuModel,
+			candidates: [][]string{
+				{"deepseek-v4-flash", "mimo-v2.5", "qwen3.5-plus", "kimi-k2.5", "glm-5"},
+				scenarioModelCandidates(cfg, "background", "fast", "default"),
+				fallbackModelCandidates(cfg, "background", "fast", "default"),
+			},
+		},
+		{
+			envKey: envSmallFastModel,
+			candidates: [][]string{
+				{"qwen3.6-plus", "minimax-m2.5", "deepseek-v4-flash", "qwen3.5-plus"},
+				scenarioModelCandidates(cfg, "fast", "background", "default"),
+				fallbackModelCandidates(cfg, "fast", "background", "default"),
+			},
+		},
+	}
+
+	for _, slot := range slots {
+		if modelID := firstUnusedModelID(used, slot.candidates...); modelID != "" {
+			modelEnv[slot.envKey] = modelID
+			used[modelID] = struct{}{}
+		}
+	}
+
+	return modelEnv
+}
+
+func firstUnusedModelID(used map[string]struct{}, candidateGroups ...[]string) string {
+	seen := make(map[string]struct{})
+	fallback := ""
+
+	for _, group := range candidateGroups {
+		for _, modelID := range group {
+			if modelID == "" {
+				continue
+			}
+			if _, ok := seen[modelID]; ok {
+				continue
+			}
+			seen[modelID] = struct{}{}
+			if fallback == "" {
+				fallback = modelID
+			}
+			if _, ok := used[modelID]; !ok {
+				return modelID
+			}
+		}
+	}
+
+	return fallback
+}
+
+func scenarioModelCandidates(cfg *config.Config, scenarios ...string) []string {
+	defaultCfg := config.DefaultConfig()
+	ids := make([]string, 0, len(scenarios)*2)
+
+	appendScenarioModels := func(source *config.Config) {
+		if source == nil || source.Models == nil {
+			return
+		}
+		for _, scenario := range scenarios {
+			if model, ok := source.Models[scenario]; ok && model.ModelID != "" {
+				ids = append(ids, model.ModelID)
+			}
+		}
+	}
+
+	appendScenarioModels(cfg)
+	appendScenarioModels(defaultCfg)
+
+	return uniqueModelIDs(ids)
+}
+
+func fallbackModelCandidates(cfg *config.Config, scenarios ...string) []string {
+	defaultCfg := config.DefaultConfig()
+	ids := make([]string, 0, len(scenarios)*2)
+
+	appendFallbackModels := func(source *config.Config) {
+		if source == nil || source.Fallbacks == nil {
+			return
+		}
+		for _, scenario := range scenarios {
+			for _, model := range source.Fallbacks[scenario] {
+				if model.ModelID != "" {
+					ids = append(ids, model.ModelID)
+				}
+			}
+		}
+	}
+
+	appendFallbackModels(cfg)
+	appendFallbackModels(defaultCfg)
+
+	return uniqueModelIDs(ids)
+}
+
+func uniqueModelIDs(ids []string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	unique := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	return unique
+}
+
+func clearOpenCodeModeEnv(env map[string]string) {
+	delete(env, envAnthropicBaseURL)
+	delete(env, envAnthropicAuthToken)
+	delete(env, envAnthropicAPIKey)
+	delete(env, envAnthropicModel)
+	delete(env, envDefaultSonnetModel)
+	delete(env, envDefaultOpusModel)
+	delete(env, envDefaultHaikuModel)
+	delete(env, envSmallFastModel)
+	delete(env, envDisableModelCalls)
+	delete(env, envDisableNonessential)
+}
+
+func modelIDForScenario(cfg *config.Config, scenarios ...string) string {
+	defaultCfg := config.DefaultConfig()
+	for _, scenario := range scenarios {
+		if cfg != nil && cfg.Models != nil {
+			if model, ok := cfg.Models[scenario]; ok && model.ModelID != "" {
+				return model.ModelID
+			}
+		}
+		if model, ok := defaultCfg.Models[scenario]; ok && model.ModelID != "" {
+			return model.ModelID
+		}
+	}
+	return ""
 }
 
 // IsOpenCodeModeEnabled checks if Claude Code is configured to use the proxy.

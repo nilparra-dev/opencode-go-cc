@@ -10,6 +10,7 @@ A transparent proxy that lets you use your [OpenCode Go](https://opencode.ai/doc
 - **No Shell Hacks** — Uses Claude Code's native `settings.json` instead of environment variables or aliases
 - **Transparent Proxy** — Full Anthropic ↔ OpenAI format conversion (requests, responses, and streaming)
 - **Smart Model Routing** — Automatically picks the best OpenCode model for the task
+- **Curated Claude Picker** — `/model` surfaces a broader OpenCode set instead of just a few repeated IDs
 - **Fallback Chains** — If a model fails, automatically tries the next one
 - **Circuit Breaker** — Skips unhealthy models to avoid latency spikes
 - **Real-time Streaming** — Full SSE streaming with live format transformation
@@ -42,6 +43,9 @@ claude
 
 # 7. To go back to Anthropic
 occb off
+
+# 8. Later, update occb in place
+occb update
 ```
 
 ### macOS / Linux
@@ -63,6 +67,9 @@ occb init
 occb on
 claude
 occb off
+
+# Update to the latest release later
+occb update
 ```
 
 ## Requirements
@@ -99,6 +106,7 @@ occb stop          # Stop proxy server
 occb run           # Run Claude Code with temporary proxy
 occb validate      # Validate configuration
 occb models        # List available OpenCode Go models
+occb update        # Download and install the latest release
 ```
 
 ## Model Routing
@@ -113,6 +121,10 @@ The proxy automatically detects the type of request and routes to the appropriat
 | **Long Context** | >80K tokens                                        | `minimax-m2.5` |
 | **Background** | Read/list operations                                 | `qwen3.5-plus` |
 | **Fast**       | Streaming requests (unless scenario routing enabled) | `qwen3.6-plus` |
+
+When you activate `occb on`, Claude's internal tier env vars are seeded with a curated OpenCode set so the `/model` picker surfaces more useful options. The seeded set currently uses `kimi-k2.6`, `deepseek-v4-pro`, `qwen3.7-max`, `deepseek-v4-flash`, and `qwen3.6-plus`, although the exact visible menu still depends on Claude's current effort level.
+
+If you want Claude's explicit `/model` or `--model` choice to override scenario routing, set `respect_requested_model: true` in your config. Leaving it `false` preserves occb's automatic routing logic.
 
 ## Configuration
 

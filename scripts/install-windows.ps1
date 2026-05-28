@@ -26,7 +26,11 @@ try {
 # Build the binary
 Write-Host "`nBuilding occb..." -ForegroundColor Yellow
 Set-Location $RepoDir
-go build -ldflags "-X main.version=0.1.0" -o bin\occb.exe .\cmd\occb
+$Version = (git describe --tags --always --dirty 2>$null)
+if (-not $Version) {
+    $Version = "dev"
+}
+go build -ldflags "-X main.version=$Version" -o bin\occb.exe .\cmd\occb
 
 if (-not (Test-Path .\bin\occb.exe)) {
     Write-Error "Build failed! Binary not found."
@@ -74,5 +78,6 @@ Write-Host "  occb init      # Create config file"
 Write-Host "  occb on        # Start proxy and enable OpenCode mode"
 Write-Host "  claude         # Launch Claude Code with OpenCode"
 Write-Host "  occb off       # Return to Anthropic mode"
+Write-Host "  occb update    # Install the latest release later"
 Write-Host ""
 Write-Host "Note: If 'occb' is not recognized, close and reopen your terminal." -ForegroundColor Yellow

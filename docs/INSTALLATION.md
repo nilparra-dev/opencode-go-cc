@@ -14,6 +14,12 @@ curl -fsSL https://raw.githubusercontent.com/nilparra-dev/opencode-go-cc/main/sc
 iwr -useb https://raw.githubusercontent.com/nilparra-dev/opencode-go-cc/main/scripts/install.ps1 | iex
 ```
 
+After installation, update to the latest release anytime with:
+
+```bash
+occb update
+```
+
 ## Manual Installation
 
 ### From Source
@@ -25,6 +31,9 @@ git clone https://github.com/nilparra-dev/opencode-go-cc.git
 cd opencode-go-cc
 make build
 make install
+
+# Later, install the newest published release
+occb update
 ```
 
 ### Pre-built Binaries

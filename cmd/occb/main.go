@@ -42,6 +42,7 @@ Quick start:
 	rootCmd.AddCommand(cli.NewRunCmd())
 	rootCmd.AddCommand(cli.NewValidateCmd())
 	rootCmd.AddCommand(cli.NewModelsCmd())
+	rootCmd.AddCommand(cli.NewUpdateCmd(version))
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

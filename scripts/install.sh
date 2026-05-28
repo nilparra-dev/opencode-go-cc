@@ -33,23 +33,26 @@ else
     BINARY_NAME="${BINARY}"
 fi
 
-# Get latest release
-LATEST_URL="https://api.github.com/repos/${REPO}/releases/latest"
-echo "Fetching latest release info..."
-DOWNLOAD_URL=$(curl -s "$LATEST_URL" | grep "browser_download_url.*${PLATFORM}" | cut -d '"' -f 4)
-
-if [ -z "$DOWNLOAD_URL" ]; then
-    echo "Could not find release binary for platform: $PLATFORM"
-    echo "You may need to build from source."
-    exit 1
-fi
-
-# Download
-echo "Downloading ${BINARY} for ${PLATFORM}..."
 TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 
-curl -fsSL "$DOWNLOAD_URL" -o "${TMP_DIR}/${BINARY_NAME}"
+# Get latest release or fall back to Go source
+LATEST_URL="https://api.github.com/repos/${REPO}/releases/latest"
+echo "Fetching latest release info..."
+DOWNLOAD_URL=$(curl -fsSL "$LATEST_URL" 2>/dev/null | grep "browser_download_url.*${PLATFORM}" | cut -d '"' -f 4 || true)
+
+if [ -n "$DOWNLOAD_URL" ]; then
+    echo "Downloading ${BINARY} for ${PLATFORM}..."
+    curl -fsSL "$DOWNLOAD_URL" -o "${TMP_DIR}/${BINARY_NAME}"
+else
+    echo "No published release found for ${PLATFORM}. Falling back to 'go install'."
+    if ! command -v go >/dev/null 2>&1; then
+        echo "Go is required for fallback installation but was not found in PATH."
+        exit 1
+    fi
+
+    GOBIN="$TMP_DIR" go install github.com/nilparra-dev/opencode-go-cc/cmd/occb@latest
+fi
 
 # Determine install directory
 if [ -w "/usr/local/bin" ]; then
@@ -75,3 +78,4 @@ fi
 echo ""
 echo "${BINARY} installed successfully!"
 echo "Run '${BINARY} init' to get started."
+echo "Run '${BINARY} update' later to install the latest release."

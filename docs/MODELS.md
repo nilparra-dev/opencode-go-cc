@@ -34,6 +34,22 @@ For cost efficiency with OpenCode Go ($5 first month, then $10/month):
 | **Long Context**| minimax-m2.5   | ~6,300               |
 | **Fast**       | qwen3.6-plus    | ~3,300               |
 
+## Claude `/model` Picker Defaults
+
+Claude only exposes a few custom model slots, so occb seeds those slots with a representative OpenCode set by default:
+
+| Claude Slot     | OpenCode Model       |
+| --------------- | -------------------- |
+| Custom model    | `kimi-k2.6`          |
+| Custom Sonnet   | `deepseek-v4-pro`    |
+| Custom Opus     | `qwen3.7-max`        |
+| Custom Haiku    | `deepseek-v4-flash`  |
+| Small/Fast      | `qwen3.6-plus`       |
+
+This picker mapping does not change occb's normal scenario routing by itself. If you want the selected Claude model to be sent upstream as-is, enable `respect_requested_model: true` in your config.
+
+Claude may not show every seeded slot at the same time; the exact visible menu depends on the effort level and which tier Claude treats as the current default.
+
 ## Customizing Routes
 
 Edit `~/.config/occb/config.yaml` to change models for each scenario:

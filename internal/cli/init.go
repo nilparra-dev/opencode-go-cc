@@ -49,6 +49,8 @@ host: "127.0.0.1"
 port: 3456
 hot_reload: false
 enable_streaming_scenario_routing: false
+# Keep scenario routing by default. Set to true if you want Claude's /model or
+# --model choice to force that exact upstream model instead.
 respect_requested_model: false
 
 models:

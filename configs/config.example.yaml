@@ -15,7 +15,8 @@ hot_reload: false
 # Route streaming requests using scenario rules instead of fast model
 enable_streaming_scenario_routing: false
 
-# Allow client-requested model to override scenario routing
+# Keep scenario routing by default. Set to true if you want Claude's /model or
+# --model choice to force that exact upstream model instead.
 respect_requested_model: false
 
 # Model routing configuration
