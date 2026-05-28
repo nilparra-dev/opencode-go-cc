@@ -171,13 +171,52 @@ func IsOpenCodeModeEnabled() (bool, error) {
 }
 
 // IsClaudeAuthenticated checks if Claude Code has an active OAuth session.
-// This is detected by checking if ~/.claude.json exists.
+// It checks ~/.claude.json for session/token data, not just file existence.
 func IsClaudeAuthenticated() bool {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return false
 	}
 	claudeJSON := filepath.Join(home, ".claude.json")
-	_, err = os.Stat(claudeJSON)
-	return err == nil
+	data, err := os.ReadFile(claudeJSON)
+	if err != nil {
+		return false
+	}
+
+	// Check if the file contains session/auth data
+	content := string(data)
+	return containsAny(content, []string{
+		`"session"`,
+		`"token"`,
+		`"accessToken"`,
+		`"refreshToken"`,
+		`"account"`,
+		`"user"`,
+		`"email"`,
+		`"organization"`,
+	})
+}
+
+// containsAny returns true if s contains any of the substrings.
+func containsAny(s string, subs []string) bool {
+	for _, sub := range subs {
+		if contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// contains checks if s contains sub.
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsHelper(s, sub))
+}
+
+func containsHelper(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
 }
