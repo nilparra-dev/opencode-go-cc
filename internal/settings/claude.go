@@ -121,6 +121,9 @@ func EnableOpenCodeMode(proxyURL string) error {
 
 	s.Env["ANTHROPIC_BASE_URL"] = proxyURL
 	s.Env["ANTHROPIC_AUTH_TOKEN"] = "unused"
+	// Force Claude Code to use API key mode instead of Claude.ai OAuth session
+	// This ensures ANTHROPIC_BASE_URL is respected
+	s.Env["ANTHROPIC_API_KEY"] = "occb-proxy"
 
 	return s.Save()
 }
@@ -134,6 +137,7 @@ func DisableOpenCodeMode() error {
 
 	delete(s.Env, "ANTHROPIC_BASE_URL")
 	delete(s.Env, "ANTHROPIC_AUTH_TOKEN")
+	delete(s.Env, "ANTHROPIC_API_KEY")
 
 	return s.Save()
 }
