@@ -121,8 +121,25 @@ func EnableOpenCodeMode(proxyURL string) error {
 
 	s.Env["ANTHROPIC_BASE_URL"] = proxyURL
 	s.Env["ANTHROPIC_AUTH_TOKEN"] = "unused"
-	// Force Claude Code to use API key mode instead of Claude.ai OAuth session
-	// This ensures ANTHROPIC_BASE_URL is respected
+	// Note: We intentionally do NOT set ANTHROPIC_API_KEY here.
+	// If we set it, Claude Code shows an auth conflict when the user
+	// is also logged into Claude.ai via OAuth.
+	// The correct flow is: either be logged out of Claude.ai, or use
+	// the --force-api-key flag if you want to override the OAuth session.
+
+	return s.Save()
+}
+
+// EnableOpenCodeModeWithAPIKey forces API key mode (for users who want to
+// override their Claude.ai OAuth session).
+func EnableOpenCodeModeWithAPIKey(proxyURL string) error {
+	s, err := Load()
+	if err != nil {
+		return err
+	}
+
+	s.Env["ANTHROPIC_BASE_URL"] = proxyURL
+	s.Env["ANTHROPIC_AUTH_TOKEN"] = "unused"
 	s.Env["ANTHROPIC_API_KEY"] = "occb-proxy"
 
 	return s.Save()
@@ -151,4 +168,16 @@ func IsOpenCodeModeEnabled() (bool, error) {
 
 	_, hasBaseURL := s.Env["ANTHROPIC_BASE_URL"]
 	return hasBaseURL, nil
+}
+
+// IsClaudeAuthenticated checks if Claude Code has an active OAuth session.
+// This is detected by checking if ~/.claude.json exists.
+func IsClaudeAuthenticated() bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	claudeJSON := filepath.Join(home, ".claude.json")
+	_, err = os.Stat(claudeJSON)
+	return err == nil
 }
