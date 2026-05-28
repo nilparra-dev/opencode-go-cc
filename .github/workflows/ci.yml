@@ -19,7 +19,7 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
       - name: Download dependencies
-        run: go mod download
+        run: go mod tidy
       - name: Run tests
         run: go test ./... -v -race
       - name: Run vet
@@ -32,6 +32,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
+      - name: Download dependencies
+        run: go mod tidy
       - name: Build
         run: go build -o bin/occb ./cmd/occb
 
@@ -42,6 +44,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
+      - name: Download dependencies
+        run: go mod tidy
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
