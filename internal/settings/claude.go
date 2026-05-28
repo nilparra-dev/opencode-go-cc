@@ -238,7 +238,8 @@ func containsHelper(s, sub string) bool {
 	return false
 }
 
-// EnsureOnboardingComplete ensures ~/.claude.json has hasCompletedOnboarding set to true.
+// EnsureOnboardingComplete ensures ~/.claude.json has hasCompletedOnboarding set to true
+// and removes OAuth data to prevent auth conflicts with API key mode.
 // Claude Code has an onboarding gate that runs before reading env vars. If onboarding
 // is not marked complete, it ignores ANTHROPIC_BASE_URL and forces OAuth login.
 func EnsureOnboardingComplete() error {
@@ -265,6 +266,11 @@ func EnsureOnboardingComplete() error {
 	// Ensure hasCompletedOnboarding is set
 	data["hasCompletedOnboarding"] = true
 
+	// Remove OAuth account data to prevent auth conflicts with API key mode
+	// When both OAuth and ANTHROPIC_API_KEY are present, Claude Code shows
+	// an auth conflict and ignores the proxy
+	delete(data, "oauthAccount")
+
 	output, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal .claude.json: %w", err)
@@ -274,6 +280,10 @@ func EnsureOnboardingComplete() error {
 	if err := os.WriteFile(claudeJSON, output, 0644); err != nil {
 		return fmt.Errorf("failed to write .claude.json: %w", err)
 	}
+
+	// Also remove the credentials file which contains OAuth tokens
+	credentialsFile := filepath.Join(home, ".claude", ".credentials.json")
+	_ = os.Remove(credentialsFile)
 
 	return nil
 }
