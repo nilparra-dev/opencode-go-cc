@@ -122,10 +122,15 @@ func NewStatusCmd() *cobra.Command {
 			fmt.Println("OpenCode Claude Bridge (occb)")
 			fmt.Println()
 
-			// Proxy status
-			pid, pidErr := readPID()
-			if pidErr == nil && isProcessRunning(pid) {
-				fmt.Printf("  Proxy:   running (PID %d)\n", pid)
+			// Proxy status — use health check as primary source of truth
+			proxyRunning := isProxyRunning()
+			if proxyRunning {
+				pid, pidErr := readPID()
+				if pidErr == nil {
+					fmt.Printf("  Proxy:   running (PID %d)\n", pid)
+				} else {
+					fmt.Println("  Proxy:   running")
+				}
 			} else {
 				fmt.Println("  Proxy:   stopped")
 			}
@@ -155,16 +160,20 @@ func readPID() (int, error) {
 	return strconv.Atoi(string(data))
 }
 
-// isProcessRunning checks if a process is running.
-func isProcessRunning(pid int) bool {
-	process, err := os.FindProcess(pid)
+// isProxyRunning checks if the proxy is responding to health checks.
+func isProxyRunning() bool {
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	resp, err := client.Get("http://127.0.0.1:3456/health")
 	if err != nil {
 		return false
 	}
-	// On Unix, FindProcess always succeeds, so we need to send signal 0
-	// On Windows, this works differently, but Signal 0 is a common check
-	err = process.Signal(os.Signal(nil))
-	return err == nil
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+// isProcessRunning checks if the proxy process is actually responding.
+func isProcessRunning(pid int) bool {
+	return isProxyRunning()
 }
 
 // waitForProxy polls the proxy health endpoint until ready or timeout.

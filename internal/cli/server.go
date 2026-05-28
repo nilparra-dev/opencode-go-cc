@@ -35,7 +35,7 @@ func NewServeCmd() *cobra.Command {
 				cfg.Port = port
 			}
 
-			application, err := app.NewApp(cfg, "")
+			application, err := app.NewApp(cfg, proxyPIDPath())
 			if err != nil {
 				return fmt.Errorf("failed to create app: %w", err)
 			}
