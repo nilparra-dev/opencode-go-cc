@@ -117,5 +117,10 @@ func (c *OpenCodeClient) SendStreamRequest(ctx context.Context, req *types.ChatC
 
 // isAnthropicModel returns true for models that use the Anthropic endpoint.
 func (c *OpenCodeClient) isAnthropicModel(modelID string) bool {
-	return modelID == "minimax-m2.7" || modelID == "minimax-m2.5"
+	switch modelID {
+	case "minimax-m2.7", "minimax-m2.5", "qwen3.7-max", "qwen3.6-plus", "qwen3.5-plus":
+		return true
+	default:
+		return false
+	}
 }

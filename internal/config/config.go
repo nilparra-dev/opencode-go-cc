@@ -122,7 +122,7 @@ func DefaultConfig() *Config {
 		},
 		Fallbacks: map[string][]ModelConfig{
 			"default": {
-				{Provider: "opencode-go", ModelID: "mimo-v2-pro"},
+				{Provider: "opencode-go", ModelID: "mimo-v2.5-pro"},
 				{Provider: "opencode-go", ModelID: "qwen3.6-plus"},
 			},
 			"background": {
@@ -131,7 +131,7 @@ func DefaultConfig() *Config {
 			},
 			"think": {
 				{Provider: "opencode-go", ModelID: "kimi-k2.6"},
-				{Provider: "opencode-go", ModelID: "mimo-v2-pro"},
+				{Provider: "opencode-go", ModelID: "mimo-v2.5-pro"},
 			},
 			"complex": {
 				{Provider: "opencode-go", ModelID: "glm-5"},
