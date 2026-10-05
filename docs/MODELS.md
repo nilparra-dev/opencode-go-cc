@@ -34,9 +34,13 @@ For cost efficiency with OpenCode Go ($5 first month, then $10/month):
 | **Long Context**| minimax-m2.5   | ~6,300               |
 | **Fast**       | qwen3.6-plus    | ~3,300               |
 
-## Claude `/model` Picker Defaults
+## Claude `/model` Picker
 
-Claude only exposes a few custom model slots, so occb seeds those slots with a representative OpenCode set by default:
+In the default (mixed) mode the picker keeps the official Claude models and lists the
+OpenCode Go catalog next to them; nothing is pinned. Pick an OpenCode model and it is
+used as-is (`respect_requested_model: true`).
+
+With `occb on --exclusive`, Claude only exposes a few custom model slots, so occb seeds those slots with a representative OpenCode set:
 
 | Claude Slot     | OpenCode Model       |
 | --------------- | -------------------- |
@@ -45,8 +49,6 @@ Claude only exposes a few custom model slots, so occb seeds those slots with a r
 | Custom Opus     | `qwen3.7-max`        |
 | Custom Haiku    | `deepseek-v4-flash`  |
 | Small/Fast      | `qwen3.6-plus`       |
-
-This picker mapping does not change occb's normal scenario routing by itself. If you want the selected Claude model to be sent upstream as-is, enable `respect_requested_model: true` in your config.
 
 Claude may not show every seeded slot at the same time; the exact visible menu depends on the effort level and which tier Claude treats as the current default.
 
@@ -65,4 +67,4 @@ models:
 
 ## Adding New Models
 
-OpenCode Go may add new models over time. You can use any model ID in your config without waiting for an occb update — just set the `model_id` to the new model name. If the model uses the Anthropic endpoint (like MiniMax or Qwen), occb will route it correctly based on the model name pattern.
+OpenCode Go may add new models over time. You can use any model ID in your config without waiting for an occb update — just set the `model_id` to the new model name. If the model uses the Anthropic endpoint, occb routes it correctly when its ID starts with `minimax-` or `qwen`; for any other ID list it under `opencode_go.anthropic_models` in your config.

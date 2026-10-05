@@ -2,11 +2,12 @@
 
 A transparent proxy that lets you use your [OpenCode Go](https://opencode.ai/docs/go/) subscription with [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
-`occb` sits between Claude Code and OpenCode Go, intercepting Anthropic API requests, transforming them to OpenAI format, and forwarding them to OpenCode Go's endpoint. Switch between your normal Claude subscription and OpenCode models with two simple commands.
+`occb` sits between Claude Code and OpenCode Go, intercepting Anthropic API requests, transforming them to OpenAI format, and forwarding them to OpenCode Go's endpoint. Use OpenCode models next to your normal Claude models in the same `/model` picker, or switch back with two simple commands.
 
 ## Features
 
-- **Two-Command Toggle** — `occb on` to use OpenCode, `occb off` to go back to Anthropic
+- **Claude + OpenCode Together** — Claude models are forwarded untouched to Anthropic (your login is never modified); OpenCode models are added to `/model`
+- **Two-Command Toggle** — `occb on` to enable it, `occb off` to go back to plain Claude Code
 - **No Shell Hacks** — Uses Claude Code's native `settings.json` instead of environment variables or aliases
 - **Transparent Proxy** — Full Anthropic ↔ OpenAI format conversion (requests, responses, and streaming)
 - **Smart Model Routing** — Automatically picks the best OpenCode model for the task
@@ -98,12 +99,12 @@ occb update
 
 ```
 occb init          # Create default configuration file
-occb on            # Activate OpenCode mode (start proxy + configure Claude)
+occb on            # Start proxy + configure Claude (add --exclusive for OpenCode models only)
 occb off           # Deactivate OpenCode mode (stop proxy + restore Claude)
 occb status        # Show current status
 occb serve         # Start proxy server (foreground)
 occb stop          # Stop proxy server
-occb run           # Run Claude Code with temporary proxy
+occb run           # Run Claude Code with a temporary proxy (settings untouched)
 occb validate      # Validate configuration
 occb models        # List available OpenCode Go models
 occb update        # Download and install the latest release
@@ -122,9 +123,9 @@ The proxy automatically detects the type of request and routes to the appropriat
 | **Background** | Read/list operations                                 | `qwen3.5-plus` |
 | **Fast**       | Streaming requests (unless scenario routing enabled) | `qwen3.6-plus` |
 
-When you activate `occb on`, Claude's internal tier env vars are seeded with a curated OpenCode set so the `/model` picker surfaces more useful options. The seeded set currently uses `kimi-k2.6`, `deepseek-v4-pro`, `qwen3.7-max`, `deepseek-v4-flash`, and `qwen3.6-plus`, although the exact visible menu still depends on Claude's current effort level.
+By default `occb on` leaves Claude's models alone and adds the OpenCode catalog to `/model`. The model you pick is used as-is (`respect_requested_model: true`); scenario routing applies when it is `false`. `occb on --exclusive` instead pins all Claude tiers to OpenCode models (`kimi-k2.6`, `deepseek-v4-pro`, `qwen3.7-max`, `deepseek-v4-flash`, `qwen3.6-plus`) and sends nothing to Anthropic.
 
-If you want Claude's explicit `/model` or `--model` choice to override scenario routing, set `respect_requested_model: true` in your config. Leaving it `false` preserves occb's automatic routing logic.
+Note: Anthropic does not support routing Claude Code to non-Claude models, so tool use and reasoning quality depend on the OpenCode model.
 
 ## Configuration
 

@@ -22,18 +22,24 @@ func proxyPIDPath() string {
 
 // NewOnCmd creates the on command.
 func NewOnCmd() *cobra.Command {
+	var exclusive bool
+
 	cmd := &cobra.Command{
 		Use:   "on",
 		Short: "Activate OpenCode mode",
-		Long: `Starts the proxy server and configures Claude Code to use OpenCode Go models.
+		Long: `Starts the proxy server and configures Claude Code to route through it.
+
+By default Claude models keep working: requests for claude-* models are
+forwarded to Anthropic with your own login or API key, and the OpenCode Go
+models are added to Claude Code's /model picker. Your Claude login is not touched.
+
+With --exclusive, every tier is pinned to an OpenCode model and Claude Code uses
+a dummy credential, so nothing reaches Anthropic.
 
 This command:
 1. Ensures Claude Code onboarding is marked complete (required for proxy mode)
 2. Starts the proxy server in the background
-3. Configures Claude Code settings to route through the proxy
-
-You can use this even if you are logged into Claude.ai. The proxy will
-override the default Anthropic endpoint.`,
+3. Configures Claude Code settings to route through the proxy`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Check if already running
 			if pid, err := readPID(); err == nil && isProcessRunning(pid) {
@@ -61,19 +67,32 @@ override the default Anthropic endpoint.`,
 			}
 
 			// Update Claude Code settings (this also ensures onboarding is complete)
-			if err := settings.EnableOpenCodeMode(proxyURL, cfg); err != nil {
+			if exclusive {
+				err = settings.EnableOpenCodeMode(proxyURL, cfg)
+			} else {
+				err = settings.EnableMixedMode(proxyURL)
+			}
+			if err != nil {
 				return fmt.Errorf("failed to update Claude Code settings: %w", err)
 			}
 
 			fmt.Println()
 			fmt.Println("✓ OpenCode mode activated")
 			fmt.Printf("  Proxy: %s\n", proxyURL)
-			fmt.Println("  Run 'claude' to start coding with OpenCode models")
+			if exclusive {
+				fmt.Println("  Mode:  exclusive (OpenCode models only)")
+				fmt.Println("  Run 'claude' to start coding with OpenCode models")
+			} else {
+				fmt.Println("  Mode:  mixed (Claude + OpenCode models)")
+				fmt.Println("  Run 'claude' and pick OpenCode models from /model")
+			}
 			fmt.Println()
 			fmt.Println("Run 'occb off' to return to normal Claude mode")
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&exclusive, "exclusive", false, "Use OpenCode models only (no Anthropic passthrough)")
 
 	return cmd
 }
@@ -166,8 +185,13 @@ func readPID() (int, error) {
 
 // isProxyRunning checks if the proxy is responding to health checks.
 func isProxyRunning() bool {
+	host, port := "127.0.0.1", 3456
+	if cfg, err := config.Load(); err == nil {
+		host, port = cfg.Host, cfg.Port
+	}
+
 	client := &http.Client{Timeout: 500 * time.Millisecond}
-	resp, err := client.Get("http://127.0.0.1:3456/health")
+	resp, err := client.Get(fmt.Sprintf("http://%s:%d/health", host, port))
 	if err != nil {
 		return false
 	}

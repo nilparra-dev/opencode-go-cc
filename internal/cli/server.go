@@ -84,10 +84,17 @@ func NewStopCmd() *cobra.Command {
 
 // NewRunCmd creates the run command.
 func NewRunCmd() *cobra.Command {
-	return &cobra.Command{
+	var exclusive bool
+
+	cmd := &cobra.Command{
 		Use:   "run [args...]",
 		Short: "Run Claude Code with a temporary proxy",
-		Long:  `Starts the proxy, launches Claude Code with the given arguments, and stops the proxy when Claude exits.`,
+		Long: `Starts the proxy, launches Claude Code with the given arguments, and stops the proxy when Claude exits.
+
+Nothing is written to Claude Code's settings: the proxy is wired in through
+environment variables of the launched process only. Claude models keep working
+(forwarded to Anthropic) unless --exclusive is given.`,
+
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
@@ -116,10 +123,13 @@ func NewRunCmd() *cobra.Command {
 			claudeCmd.Stderr = os.Stderr
 			claudeEnv := append(os.Environ(),
 				fmt.Sprintf("ANTHROPIC_BASE_URL=%s", proxyURL),
-				"ANTHROPIC_AUTH_TOKEN=unused",
+				"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1",
 			)
-			for key, value := range settings.OpenCodeModelEnv(cfg) {
-				claudeEnv = append(claudeEnv, fmt.Sprintf("%s=%s", key, value))
+			if exclusive {
+				claudeEnv = append(claudeEnv, "ANTHROPIC_AUTH_TOKEN=unused")
+				for key, value := range settings.OpenCodeModelEnv(cfg) {
+					claudeEnv = append(claudeEnv, fmt.Sprintf("%s=%s", key, value))
+				}
 			}
 			claudeCmd.Env = claudeEnv
 
@@ -131,6 +141,10 @@ func NewRunCmd() *cobra.Command {
 			return err
 		},
 	}
+
+	cmd.Flags().BoolVar(&exclusive, "exclusive", false, "Use OpenCode models only (no Anthropic passthrough)")
+
+	return cmd
 }
 
 // NewValidateCmd creates the validate command.

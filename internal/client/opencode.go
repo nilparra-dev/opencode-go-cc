@@ -20,6 +20,7 @@ type OpenCodeClient struct {
 	cfg        *config.OpenCodeGoConfig
 	httpClient *http.Client
 	apiKey     string
+	timeout    time.Duration
 }
 
 // ModelInfo represents a model entry from the OpenCode Go catalog.
@@ -36,13 +37,23 @@ func NewOpenCodeClient(cfg *config.OpenCodeGoConfig, apiKey string) *OpenCodeCli
 		timeout = 5 * time.Minute
 	}
 
+	// http.Client.Timeout also covers reading the body, which would cut long
+	// streams. Bound the wait for response headers instead, and apply the full
+	// timeout only to non-streaming calls (see requestContext).
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = timeout
+
 	return &OpenCodeClient{
-		cfg: cfg,
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
-		apiKey: apiKey,
+		cfg:        cfg,
+		httpClient: &http.Client{Transport: transport},
+		apiKey:     apiKey,
+		timeout:    timeout,
 	}
+}
+
+// requestContext bounds a non-streaming call by the configured timeout.
+func (c *OpenCodeClient) requestContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, c.timeout)
 }
 
 // UsesAnthropicEndpoint returns true for models that use the Anthropic endpoint.
@@ -52,6 +63,9 @@ func (c *OpenCodeClient) UsesAnthropicEndpoint(modelID string) bool {
 
 // SendRequest sends a non-streaming chat completion request.
 func (c *OpenCodeClient) SendRequest(ctx context.Context, req *types.ChatCompletionRequest) (*types.ChatCompletionResponse, error) {
+	ctx, cancel := c.requestContext(ctx)
+	defer cancel()
+
 	baseURL := c.cfg.BaseURL
 	if c.isAnthropicModel(req.Model) && c.cfg.AnthropicBaseURL != "" {
 		baseURL = c.cfg.AnthropicBaseURL
@@ -130,6 +144,9 @@ func (c *OpenCodeClient) SendStreamRequest(ctx context.Context, req *types.ChatC
 
 // SendAnthropicRequest sends a non-streaming Anthropic Messages request.
 func (c *OpenCodeClient) SendAnthropicRequest(ctx context.Context, req *types.MessageRequest) (*types.MessageResponse, error) {
+	ctx, cancel := c.requestContext(ctx)
+	defer cancel()
+
 	if c.cfg.AnthropicBaseURL == "" {
 		return nil, fmt.Errorf("anthropic base URL is not configured")
 	}
@@ -208,6 +225,9 @@ func (c *OpenCodeClient) SendAnthropicStreamRequest(ctx context.Context, req *ty
 
 // ListModels fetches the upstream OpenCode Go catalog.
 func (c *OpenCodeClient) ListModels(ctx context.Context) ([]ModelInfo, error) {
+	ctx, cancel := c.requestContext(ctx)
+	defer cancel()
+
 	modelsURL := strings.TrimSuffix(c.cfg.BaseURL, "/chat/completions") + "/models"
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
@@ -261,12 +281,15 @@ func (c *OpenCodeClient) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	return models, nil
 }
 
-// isAnthropicModel returns true for models that use the Anthropic endpoint.
+// isAnthropicModel returns true for models served by the Anthropic-format endpoint.
 func (c *OpenCodeClient) isAnthropicModel(modelID string) bool {
-	switch modelID {
-	case "minimax-m2.7", "minimax-m2.5", "qwen3.7-max", "qwen3.6-plus", "qwen3.5-plus":
+	if strings.HasPrefix(modelID, "minimax-") || strings.HasPrefix(modelID, "qwen") {
 		return true
-	default:
-		return false
 	}
+	for _, id := range c.cfg.AnthropicModels {
+		if id == modelID {
+			return true
+		}
+	}
+	return false
 }

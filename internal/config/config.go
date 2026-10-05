@@ -23,6 +23,7 @@ type Config struct {
 	Models                         map[string]ModelConfig   `mapstructure:"models"`
 	Fallbacks                      map[string][]ModelConfig `mapstructure:"fallbacks"`
 	OpenCodeGo                     OpenCodeGoConfig         `mapstructure:"opencode_go"`
+	Anthropic                      AnthropicConfig          `mapstructure:"anthropic"`
 	Logging                        LoggingConfig            `mapstructure:"logging"`
 }
 
@@ -42,6 +43,17 @@ type OpenCodeGoConfig struct {
 	BaseURL          string `mapstructure:"base_url"`
 	AnthropicBaseURL string `mapstructure:"anthropic_base_url"`
 	TimeoutMs        int    `mapstructure:"timeout_ms"`
+	// AnthropicModels lists extra model IDs served by the Anthropic-format endpoint.
+	// Models whose ID starts with "minimax-" or "qwen" are always treated that way.
+	AnthropicModels []string `mapstructure:"anthropic_models"`
+}
+
+// AnthropicConfig controls how Claude models are handled.
+type AnthropicConfig struct {
+	// Passthrough forwards requests for claude-* models untouched to BaseURL,
+	// so official Claude models keep working alongside OpenCode ones.
+	Passthrough bool   `mapstructure:"passthrough"`
+	BaseURL     string `mapstructure:"base_url"`
 }
 
 // LoggingConfig controls application logging behavior.
@@ -79,8 +91,14 @@ func (a *AtomicConfig) Swap(cfg *Config) {
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
-		Host:  "127.0.0.1",
-		Port:  3456,
+		Host:                           "127.0.0.1",
+		Port:                           3456,
+		EnableStreamingScenarioRouting: true,
+		RespectRequestedModel:          true,
+		Anthropic: AnthropicConfig{
+			Passthrough: true,
+			BaseURL:     "https://api.anthropic.com",
+		},
 		Models: map[string]ModelConfig{
 			"default": {
 				Provider:    "opencode-go",
@@ -166,8 +184,12 @@ func Load() (*Config, error) {
 	v.SetDefault("host", "127.0.0.1")
 	v.SetDefault("port", 3456)
 	v.SetDefault("hot_reload", false)
-	v.SetDefault("enable_streaming_scenario_routing", false)
-	v.SetDefault("respect_requested_model", false)
+	// Claude Code always streams, so without this scenario routing would never apply.
+	v.SetDefault("enable_streaming_scenario_routing", true)
+	// Honour the model picked in Claude Code's /model menu.
+	v.SetDefault("respect_requested_model", true)
+	v.SetDefault("anthropic.passthrough", true)
+	v.SetDefault("anthropic.base_url", "https://api.anthropic.com")
 	v.SetDefault("opencode_go.base_url", "https://opencode.ai/zen/go/v1/chat/completions")
 	v.SetDefault("opencode_go.anthropic_base_url", "https://opencode.ai/zen/go/v1/messages")
 	v.SetDefault("opencode_go.timeout_ms", 300000)

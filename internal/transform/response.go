@@ -71,9 +71,16 @@ func (t *ResponseTransformer) transformContent(msg types.ChatMessage) ([]types.C
 		})
 	}
 
+	if msg.Content != "" {
+		blocks = append(blocks, types.ContentBlock{
+			Type: "text",
+			Text: msg.Content,
+		})
+	}
+
 	for _, tc := range msg.ToolCalls {
 		inputJSON := json.RawMessage(`{}`)
-		if tc.Function.Arguments != "" {
+		if tc.Function.Arguments != "" && json.Valid([]byte(tc.Function.Arguments)) {
 			inputJSON = json.RawMessage(tc.Function.Arguments)
 		}
 
@@ -82,13 +89,6 @@ func (t *ResponseTransformer) transformContent(msg types.ChatMessage) ([]types.C
 			ID:    tc.ID,
 			Name:  tc.Function.Name,
 			Input: inputJSON,
-		})
-	}
-
-	if msg.Content != "" {
-		blocks = append(blocks, types.ContentBlock{
-			Type: "text",
-			Text: msg.Content,
 		})
 	}
 

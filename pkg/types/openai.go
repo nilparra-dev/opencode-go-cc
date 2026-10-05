@@ -39,6 +39,8 @@ type ChatMessage struct {
 	Role             string     `json:"role"`
 	Content          string     `json:"content,omitempty"`
 	ReasoningContent *string    `json:"reasoning_content,omitempty"`
+	// Reasoning is the alias some providers use for reasoning_content in streamed deltas.
+	Reasoning        *string    `json:"reasoning,omitempty"`
 	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string     `json:"tool_call_id,omitempty"`
 	CacheControl     json.RawMessage `json:"cache_control,omitempty"`
@@ -67,6 +69,8 @@ type FunctionDef struct {
 
 // ToolCall represents a tool call in OpenAI format.
 type ToolCall struct {
+	// Index identifies the tool call within a streamed response.
+	Index    *int         `json:"index,omitempty"`
 	ID       string       `json:"id"`
 	Type     string       `json:"type"`
 	Function FunctionCall `json:"function"`

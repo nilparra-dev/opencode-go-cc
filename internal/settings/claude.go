@@ -4,6 +4,7 @@ package settings
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -22,6 +23,11 @@ const (
 	envSmallFastModel        = "ANTHROPIC_SMALL_FAST_MODEL"
 	envDisableModelCalls     = "DISABLE_NON_ESSENTIAL_MODEL_CALLS"
 	envDisableNonessential   = "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
+	envGatewayDiscovery      = "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"
+
+	// Dummy credentials occb writes in exclusive mode; only these are ever removed.
+	placeholderAuthToken = "unused"
+	placeholderAPIKey    = "occb-proxy"
 )
 
 // ClaudeDir returns the Claude Code settings directory.
@@ -127,8 +133,33 @@ func (s *Settings) Save() error {
 	return nil
 }
 
-// EnableOpenCodeMode updates settings.json to route Claude Code through the proxy.
-// It also pins Claude's default model tiers to OpenCode models so /model exposes
+// EnableMixedMode routes Claude Code through the proxy while keeping the user's
+// own Anthropic credentials and Claude models. The proxy forwards claude-*
+// requests to Anthropic untouched and serves OpenCode models, which Claude Code
+// discovers from the proxy's /v1/models and adds to its /model picker.
+//
+// No credential variable is set, so a saved claude.ai login stays active.
+func EnableMixedMode(proxyURL string) error {
+	if err := EnsureOnboardingComplete(); err != nil {
+		return fmt.Errorf("failed to update Claude Code onboarding state: %w", err)
+	}
+
+	s, err := Load()
+	if err != nil {
+		return err
+	}
+
+	// Drop whatever a previous `occb on` (possibly exclusive mode) left behind.
+	clearManagedEnv(s.Env)
+
+	s.Env[envAnthropicBaseURL] = proxyURL
+	s.Env[envGatewayDiscovery] = "1"
+
+	return s.Save()
+}
+
+// EnableOpenCodeMode updates settings.json to route all Claude Code traffic to
+// OpenCode models ("exclusive" mode). It also pins Claude's default model tiers to OpenCode models so /model exposes
 // the configured OpenCode options instead of Anthropic defaults.
 func EnableOpenCodeMode(proxyURL string, cfg *config.Config) error {
 	// First, ensure onboarding is marked complete in ~/.claude.json
@@ -145,9 +176,10 @@ func EnableOpenCodeMode(proxyURL string, cfg *config.Config) error {
 	clearOpenCodeModeEnv(s.Env)
 
 	s.Env[envAnthropicBaseURL] = proxyURL
+	s.Env[envGatewayDiscovery] = "1"
 	// Claude Code uses the auth-token path to bootstrap custom model options from /v1/models.
 	// The proxy does not validate bearer tokens, so any sentinel value works here.
-	s.Env[envAnthropicAuthToken] = "unused"
+	s.Env[envAnthropicAuthToken] = placeholderAuthToken
 
 	for key, value := range OpenCodeModelEnv(cfg) {
 		s.Env[key] = value
@@ -171,7 +203,7 @@ func EnableOpenCodeModeWithAPIKey(proxyURL string, cfg *config.Config) error {
 	clearOpenCodeModeEnv(s.Env)
 
 	s.Env[envAnthropicBaseURL] = proxyURL
-	s.Env[envAnthropicAPIKey] = "occb-proxy"
+	s.Env[envAnthropicAPIKey] = placeholderAPIKey
 	s.Env[envDisableModelCalls] = "1"
 	s.Env[envDisableNonessential] = "1"
 
@@ -183,15 +215,55 @@ func EnableOpenCodeModeWithAPIKey(proxyURL string, cfg *config.Config) error {
 }
 
 // DisableOpenCodeMode removes the proxy configuration from settings.json.
+// Settings that occb did not write (the user's own API key, model pins, ...)
+// are left alone.
 func DisableOpenCodeMode() error {
 	s, err := Load()
 	if err != nil {
 		return err
 	}
 
-	clearOpenCodeModeEnv(s.Env)
+	clearManagedEnv(s.Env)
 
 	return s.Save()
+}
+
+// clearManagedEnv removes only what occb itself wrote.
+//
+// The dummy credentials mark exclusive mode; only then did occb also pin the
+// model tiers and set the traffic-reduction flags, so only then are those
+// removed. In mixed mode occb wrote just the base URL and the discovery flag,
+// and the user's own API key, model and other settings stay untouched.
+func clearManagedEnv(env map[string]string) {
+	exclusive := env[envAnthropicAuthToken] == placeholderAuthToken ||
+		env[envAnthropicAPIKey] == placeholderAPIKey
+
+	if isProxyBaseURL(env[envAnthropicBaseURL]) {
+		delete(env, envAnthropicBaseURL)
+	}
+	delete(env, envGatewayDiscovery)
+
+	if !exclusive {
+		return
+	}
+
+	clearOpenCodeModeEnv(env)
+}
+
+// isProxyBaseURL reports whether a base URL points at a local occb proxy.
+func isProxyBaseURL(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	switch u.Hostname() {
+	case "127.0.0.1", "localhost", "::1":
+		return true
+	}
+	return false
 }
 
 // OpenCodeModelEnv maps Claude's built-in model tiers to a curated OpenCode picker.
@@ -353,6 +425,7 @@ func clearOpenCodeModeEnv(env map[string]string) {
 	delete(env, envSmallFastModel)
 	delete(env, envDisableModelCalls)
 	delete(env, envDisableNonessential)
+	delete(env, envGatewayDiscovery)
 }
 
 func modelIDForScenario(cfg *config.Config, scenarios ...string) string {
@@ -381,63 +454,13 @@ func IsOpenCodeModeEnabled() (bool, error) {
 	return hasBaseURL, nil
 }
 
-// IsClaudeAuthenticated checks if Claude Code has an active OAuth session.
-// It checks ~/.claude.json for session/token data, not just file existence.
-func IsClaudeAuthenticated() bool {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return false
-	}
-	claudeJSON := filepath.Join(home, ".claude.json")
-	data, err := os.ReadFile(claudeJSON)
-	if err != nil {
-		return false
-	}
-
-	// Check if the file contains session/auth data
-	content := string(data)
-	return containsAny(content, []string{
-		`"session"`,
-		`"token"`,
-		`"accessToken"`,
-		`"refreshToken"`,
-		`"account"`,
-		`"oauthAccount"`,
-		`"user"`,
-		`"email"`,
-		`"organization"`,
-		`"billingType"`,
-	})
-}
-
-// containsAny returns true if s contains any of the substrings.
-func containsAny(s string, subs []string) bool {
-	for _, sub := range subs {
-		if contains(s, sub) {
-			return true
-		}
-	}
-	return false
-}
-
-// contains checks if s contains sub.
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsHelper(s, sub))
-}
-
-func containsHelper(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
-}
-
-// EnsureOnboardingComplete ensures ~/.claude.json has hasCompletedOnboarding set to true
-// and removes OAuth data to prevent auth conflicts with API key mode.
-// Claude Code has an onboarding gate that runs before reading env vars. If onboarding
-// is not marked complete, it ignores ANTHROPIC_BASE_URL and forces OAuth login.
+// EnsureOnboardingComplete makes sure ~/.claude.json has hasCompletedOnboarding
+// set to true. Claude Code has an onboarding gate that runs before it reads env
+// vars; if onboarding is not marked complete it ignores ANTHROPIC_BASE_URL.
+//
+// It only adds that one key. Login data (oauthAccount, .credentials.json) and
+// every other field are left exactly as they are, and the file is not rewritten
+// at all when the flag is already set.
 func EnsureOnboardingComplete() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -446,26 +469,32 @@ func EnsureOnboardingComplete() error {
 
 	claudeJSON := filepath.Join(home, ".claude.json")
 
-	var data map[string]interface{}
+	data := make(map[string]json.RawMessage)
 
-	if raw, err := os.ReadFile(claudeJSON); err == nil {
-		// File exists, parse it
+	raw, readErr := os.ReadFile(claudeJSON)
+	switch {
+	case readErr == nil:
 		if err := json.Unmarshal(raw, &data); err != nil {
-			// If it's not valid JSON, overwrite with minimal config
-			data = make(map[string]interface{})
+			// Do not clobber a file we cannot parse; the user's state lives in it.
+			return fmt.Errorf("failed to parse %s: %w", claudeJSON, err)
 		}
-	} else {
-		// File doesn't exist, start fresh
-		data = make(map[string]interface{})
+	case !os.IsNotExist(readErr):
+		return fmt.Errorf("failed to read %s: %w", claudeJSON, readErr)
 	}
 
-	// Ensure hasCompletedOnboarding is set
-	data["hasCompletedOnboarding"] = true
+	if string(data["hasCompletedOnboarding"]) == "true" {
+		return nil
+	}
 
-	// Remove OAuth account data to prevent auth conflicts with API key mode
-	// When both OAuth and ANTHROPIC_API_KEY are present, Claude Code shows
-	// an auth conflict and ignores the proxy
-	delete(data, "oauthAccount")
+	// Keep a copy of the original before touching it.
+	if readErr == nil {
+		backupPath := fmt.Sprintf("%s.backup.%s", claudeJSON, time.Now().Format("20060102_150405"))
+		if err := os.WriteFile(backupPath, raw, 0600); err != nil {
+			return fmt.Errorf("failed to back up .claude.json: %w", err)
+		}
+	}
+
+	data["hasCompletedOnboarding"] = json.RawMessage("true")
 
 	output, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -473,13 +502,14 @@ func EnsureOnboardingComplete() error {
 	}
 	output = append(output, '\n')
 
-	if err := os.WriteFile(claudeJSON, output, 0644); err != nil {
+	tmpPath := claudeJSON + ".tmp"
+	if err := os.WriteFile(tmpPath, output, 0600); err != nil {
 		return fmt.Errorf("failed to write .claude.json: %w", err)
 	}
-
-	// Also remove the credentials file which contains OAuth tokens
-	credentialsFile := filepath.Join(home, ".claude", ".credentials.json")
-	_ = os.Remove(credentialsFile)
+	if err := os.Rename(tmpPath, claudeJSON); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("failed to replace .claude.json: %w", err)
+	}
 
 	return nil
 }

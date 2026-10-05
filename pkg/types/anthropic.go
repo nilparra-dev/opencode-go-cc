@@ -44,6 +44,11 @@ type ContentBlock struct {
 	Name     string          `json:"name,omitempty"`
 	Input    json.RawMessage `json:"input,omitempty"`
 	ToolUseID string         `json:"tool_use_id,omitempty"`
+	// Signature is set on thinking blocks produced by Anthropic models.
+	Signature string `json:"signature,omitempty"`
+	// Content carries the payload of a tool_result block (string or array of blocks).
+	Content json.RawMessage `json:"content,omitempty"`
+	IsError bool            `json:"is_error,omitempty"`
 }
 
 // SystemContentBlock represents a system prompt block when sent as an array.
@@ -130,6 +135,35 @@ func (c ContentBlock) TextContent() string {
 		return c.Text
 	}
 	return ""
+}
+
+// ToolResultText flattens the payload of a tool_result block into plain text.
+// The payload is either a string or an array of text/image blocks.
+func (c ContentBlock) ToolResultText() string {
+	if len(c.Content) == 0 {
+		return ""
+	}
+
+	var s string
+	if err := json.Unmarshal(c.Content, &s); err == nil {
+		return s
+	}
+
+	var blocks []ContentBlock
+	if err := json.Unmarshal(c.Content, &blocks); err != nil {
+		return ""
+	}
+
+	var text string
+	for _, b := range blocks {
+		switch b.Type {
+		case "text":
+			text += b.Text
+		case "image":
+			text += "[Image]"
+		}
+	}
+	return text
 }
 
 // GetToolID returns the tool use ID for tool_result blocks.

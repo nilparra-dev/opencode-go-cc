@@ -2,6 +2,7 @@
 package router
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/nilparra-dev/opencode-go-cc/internal/config"
@@ -48,15 +49,14 @@ func NewModelSelector(atomic *config.AtomicConfig) *ModelSelector {
 func (s *ModelSelector) Select(messages []types.Message, tokenCount int, requestedModel string, isStreaming bool) (*Result, error) {
 	cfg := s.atomic.Get()
 
-	// Check if we should respect the requested model
-	if cfg.RespectRequestedModel && requestedModel != "" {
+	// Honour the model picked in Claude Code, unless it is a Claude model (those
+	// are not served by OpenCode, so scenario routing picks a replacement).
+	if cfg.RespectRequestedModel && requestedModel != "" && !IsClaudeModel(requestedModel) {
+		// Keep the request's own temperature/max_tokens: the per-scenario caps
+		// would otherwise truncate long agentic outputs.
 		primary := config.ModelConfig{
 			Provider: "opencode-go",
 			ModelID:  requestedModel,
-		}
-		if def, ok := cfg.Models["default"]; ok {
-			primary.Temperature = def.Temperature
-			primary.MaxTokens = def.MaxTokens
 		}
 		return &Result{
 			Primary:   primary,
@@ -115,43 +115,62 @@ func detectScenario(messages []types.Message, tokenCount int, cfg *config.Config
 		}
 	}
 
-	// Analyze system prompt and user messages for keywords
-	var allText string
-	for _, msg := range messages {
-		if msg.Role == "system" || msg.Role == "user" {
-			blocks := msg.ContentBlocks()
-			for _, block := range blocks {
-				allText += block.Text + " "
-			}
-		}
-	}
+	// Keyword scenarios look at what the user last asked, not the whole history.
+	lowerText := strings.ToLower(lastUserText(messages))
 
-	lowerText := strings.ToLower(allText)
-
-	// Think scenario
-	if containsAny(lowerText, "think", "plan", "reason", "analyze") {
+	if thinkPattern.MatchString(lowerText) {
 		return ScenarioThink
 	}
 
-	// Complex scenario
-	if containsAny(lowerText, "architect", "refactor", "complex", "design", "structure") {
+	if complexPattern.MatchString(lowerText) {
 		return ScenarioComplex
 	}
 
-	// Background scenario (simple read operations)
-	if containsAny(lowerText, "read file", "list directory", "grep", "find file", "cat ") {
+	if backgroundPattern.MatchString(lowerText) {
 		return ScenarioBackground
 	}
 
 	return ScenarioDefault
 }
 
-// containsAny checks if text contains any of the keywords.
-func containsAny(text string, keywords ...string) bool {
-	for _, kw := range keywords {
-		if strings.Contains(text, kw) {
-			return true
+var (
+	thinkPattern      = regexp.MustCompile(`\b(think(ing)?|plan(s|ning)?|reason(ing)?|analy[sz]e)\b`)
+	complexPattern    = regexp.MustCompile(`\b(architect(ure)?|refactor(ing)?|complex|design|structure)\b`)
+	backgroundPattern = regexp.MustCompile(`\b(read file|list directory|grep|find file|cat)\b`)
+)
+
+// lastUserText returns the text of the most recent user message that has any.
+// Turns that only carry tool_result blocks are skipped.
+func lastUserText(messages []types.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != "user" {
+			continue
 		}
+
+		var text string
+		for _, block := range messages[i].ContentBlocks() {
+			if block.Type == "text" {
+				text += block.Text + " "
+			}
+		}
+		if strings.TrimSpace(text) != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+// IsClaudeModel reports whether a model ID refers to an official Claude model
+// (or one of Claude Code's model aliases), as opposed to an OpenCode model.
+func IsClaudeModel(modelID string) bool {
+	id := strings.ToLower(modelID)
+	if strings.HasPrefix(id, "claude-") {
+		return true
+	}
+
+	switch strings.TrimSuffix(id, "[1m]") {
+	case "", "sonnet", "opus", "haiku", "best", "opusplan", "default":
+		return true
 	}
 	return false
 }

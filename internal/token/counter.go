@@ -51,7 +51,7 @@ func (c *Counter) CountMessageTokens(messages []types.Message) int {
 					total += c.CountTokens(string(block.Input))
 				}
 			case "tool_result":
-				total += c.CountTokens(block.TextContent())
+				total += c.CountTokens(block.ToolResultText())
 			}
 		}
 	}

@@ -48,10 +48,19 @@ func getDefaultConfigYAML() string {
 host: "127.0.0.1"
 port: 3456
 hot_reload: false
-enable_streaming_scenario_routing: false
-# Keep scenario routing by default. Set to true if you want Claude's /model or
-# --model choice to force that exact upstream model instead.
-respect_requested_model: false
+# Claude Code always streams; leave this on or every request is routed to the "fast" model.
+enable_streaming_scenario_routing: true
+
+# Use the model picked in Claude Code's /model menu as-is. Set to false to let
+# scenario routing choose the model instead.
+respect_requested_model: true
+
+# Requests for official claude-* models are forwarded untouched to Anthropic
+# (using your own Claude login or API key), so they keep working alongside
+# the OpenCode models. Set passthrough to false to disable.
+anthropic:
+  passthrough: true
+  base_url: "https://api.anthropic.com"
 
 models:
   default:
