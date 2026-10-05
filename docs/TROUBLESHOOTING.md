@@ -30,17 +30,29 @@ Run `occb init` to create the default configuration.
    cat ~/.claude/settings.json
    ```
    
-   You should see:
+   You should see (mixed mode, the default):
    ```json
    {
      "env": {
        "ANTHROPIC_BASE_URL": "http://127.0.0.1:3456",
-       "ANTHROPIC_AUTH_TOKEN": "unused"
+       "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1"
      }
    }
    ```
+   With `occb on --exclusive` you will also see `ANTHROPIC_AUTH_TOKEN: "unused"` and the pinned model variables.
 
 3. Restart Claude Code. It watches `settings.json` for changes, but a restart ensures it picks up the new environment.
+
+## OpenCode models do not appear in `/model`
+
+Restart Claude Code after `occb on` (it reads `settings.json` at startup), and check that
+`occb status` shows the proxy running. The list comes from the proxy's `/v1/models`.
+
+## Claude models fail with 401 or 502 in mixed mode
+
+Claude requests are forwarded to Anthropic with your own credentials, so you must be logged in
+(`claude /login`) or have your own API key configured. A 502 means Anthropic was unreachable;
+check `anthropic.base_url` in the occb config.
 
 ## API errors
 

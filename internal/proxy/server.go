@@ -27,6 +27,8 @@ type Server struct {
 	respTransformer *transform.ResponseTransformer
 	ocClient      *client.OpenCodeClient
 	tokenCounter  *token.Counter
+	breaker       *router.CircuitBreaker
+	upstream      http.RoundTripper
 }
 
 // NewServer creates a new proxy server.
@@ -47,6 +49,8 @@ func NewServer(atomicCfg *config.AtomicConfig) (*Server, error) {
 		respTransformer: transform.NewResponseTransformer(),
 		ocClient:        ocClient,
 		tokenCounter:    tokenCounter,
+		breaker:         router.NewCircuitBreaker(),
+		upstream:        newUpstreamTransport(),
 	}
 
 	mux := http.NewServeMux()
@@ -54,6 +58,8 @@ func NewServer(atomicCfg *config.AtomicConfig) (*Server, error) {
 	mux.HandleFunc("/v1/messages", s.handleMessages)
 	mux.HandleFunc("/v1/messages/count_tokens", s.handleCountTokens)
 	mux.HandleFunc("/v1/models", s.handleModels)
+	// Everything else (batches, files, ...) belongs to Anthropic.
+	mux.HandleFunc("/", s.handleFallthrough)
 
 	handler := withLogging(withRecovery(mux))
 

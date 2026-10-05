@@ -143,7 +143,7 @@ func (t *RequestTransformer) transformUserMessage(blocks []types.ContentBlock) (
 		case "text":
 			textParts = append(textParts, block.Text)
 		case "tool_result":
-			toolContent := block.TextContent()
+			toolContent := block.ToolResultText()
 			result = append(result, types.ChatMessage{
 				Role:       "tool",
 				Content:    toolContent,
