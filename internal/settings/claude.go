@@ -428,21 +428,6 @@ func clearOpenCodeModeEnv(env map[string]string) {
 	delete(env, envGatewayDiscovery)
 }
 
-func modelIDForScenario(cfg *config.Config, scenarios ...string) string {
-	defaultCfg := config.DefaultConfig()
-	for _, scenario := range scenarios {
-		if cfg != nil && cfg.Models != nil {
-			if model, ok := cfg.Models[scenario]; ok && model.ModelID != "" {
-				return model.ModelID
-			}
-		}
-		if model, ok := defaultCfg.Models[scenario]; ok && model.ModelID != "" {
-			return model.ModelID
-		}
-	}
-	return ""
-}
-
 // IsOpenCodeModeEnabled checks if Claude Code is configured to use the proxy.
 func IsOpenCodeModeEnabled() (bool, error) {
 	s, err := Load()
